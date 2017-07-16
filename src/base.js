@@ -505,7 +505,7 @@ class Base {
       }
     });
   }
-  getOrCreateMatrixRoomFromThirdPartyRoomId(thirdPartyRoomId) {
+  getOrCreateMatrixRoomFromThirdPartyRoomId(thirdPartyRoomId, ghostIntent=null) {
     const { warn, info } = debug(this.getOrCreateMatrixRoomFromThirdPartyRoomId.name);
     const roomAlias = this.getRoomAliasFromThirdPartyRoomId(thirdPartyRoomId);
     const roomAliasName = this.getRoomAliasLocalPartFromThirdPartyRoomId(thirdPartyRoomId);
@@ -515,9 +515,11 @@ class Base {
     const botClient = botIntent.getClient();
     const puppetUserId = puppetClient.credentials.userId;
 
+    let creatorIntent;
+
     const grantPuppetMaxPowerLevel = (room_id) => {
       info("ensuring puppet user has full power over this room");
-      return botIntent.setPowerLevel(room_id, puppetUserId, 100).then(()=>{
+      return creatorIntent.setPowerLevel(room_id, puppetUserId, 100).then(()=>{
         info('granted puppet client admin status on the protocol status room');
       }).catch((err)=>{
         warn(err);
@@ -532,19 +534,23 @@ class Base {
       return room_id;
     }, (_err) => {
       info("the room doesn't exist. we need to create it for the first time");
-      return Promise.resolve(this.getThirdPartyRoomDataById(thirdPartyRoomId)).then(thirdPartyRoomData => {
+      return this.getThirdPartyRoomDataById(thirdPartyRoomId).then(thirdPartyRoomData => {
         info("got 3p room data", thirdPartyRoomData);
         const { name, topic } = thirdPartyRoomData;
         info("creating room !!!!", ">>>>"+roomAliasName+"<<<<", name, topic);
-        return botIntent.createRoom({
-          createAsClient: true, // bot won't auto-join the room in this case
-          options: {
-            name, topic, room_alias_name: roomAliasName
-          }
-        }).then(({room_id}) => {
-          info("room created", room_id, roomAliasName);
-          return room_id;
-        });
+        const options = {
+          name, topic, room_alias_name: roomAliasName
+        };
+        if ( ghostIntent ) {
+          creatorIntent = ghostIntent;
+          return ghostIntent.createRoom({ options, createAsClient: false });
+        } else {
+          creatorIntent = botIntent;
+          return botIntent.createRoom({ options, createAsClient: true });
+        }
+      }).then(({room_id}) => {
+        info("room created", room_id, roomAliasName);
+        return room_id;
       });
     }).then(matrixRoomId => {
       info("making puppet join room", matrixRoomId);
@@ -556,7 +562,7 @@ class Base {
           warn('we cannot use this room anymore because you cannot currently rejoin an empty room (synapse limitation? riot throws this error too). we need to de-alias it now so a new room gets created that we can actually use.');
           return botClient.deleteAlias(roomAlias).then(()=>{
             warn('deleted alias... trying again to get or create room.');
-            return this.getOrCreateMatrixRoomFromThirdPartyRoomId(thirdPartyRoomId);
+            return this.getOrCreateMatrixRoomFromThirdPartyRoomId(thirdPartyRoomId, ghostIntent);
           });
         } else {
           warn("ignoring error from puppet join room: ", err.message);
@@ -629,7 +635,8 @@ class Base {
       mimetype
     } = thirdPartyRoomImageMessageData;
 
-    return this.getOrCreateMatrixRoomFromThirdPartyRoomId(roomId).then((matrixRoomId) => {
+    let ghostIntent = this.getIntentFromThirdPartySenderId(senderId, senderName, avatarUrl);
+    return this.getOrCreateMatrixRoomFromThirdPartyRoomId(roomId, ghostIntent).then((matrixRoomId) => {
       return this.getUserClient(matrixRoomId, senderId, senderName, avatarUrl).then((client) => {
         if (senderId === undefined) {
           info("this message was sent by me, but did it come from a matrix client or a 3rd party client?");
