@@ -802,7 +802,11 @@ class Base {
     } else {
       msg = this.tagMatrixMessage(body);
 
+<<<<<<< HEAD
       if (msgtype === 'm.text' || msgtype === 'm.notice') {
+=======
+      if (msgtype === 'm.text' || msgtype == 'm.notice') {
+>>>>>>> e0138fa4af7f50ffd2da12f85cd39633c3e7cb05
         if (this.handleMatrixUserBangCommand) {
           const bc = bangCommand(body);
           if (bc) return this.handleMatrixUserBangCommand(bc, data);
